@@ -1,8 +1,8 @@
 "use client";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { createAssociatedTokenAccountInstruction, createTransferInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { Connection, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { Connection, LAMPORTS_PER_SOL, ParsedAccountData, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { useEffect, useState } from "react"
 
 const connection = new Connection("https://api.devnet.solana.com");
@@ -50,48 +50,40 @@ export default function Checker() {
     }
 
     const sendSol = async () => {
-        if (!publicKey) return alert("Wallet not connected!");
-    
+        if (!publicKey) return;
+
         try {
-            setIsLoading(true);
+        
+        setIsLoading(true);
+
     
-            // Validate and Convert Recipient Address
-            let recipientPubKey;
-            try {
-                recipientPubKey = new PublicKey(recipientAddress.trim());
-            } catch (error) {
-                throw new Error("Invalid recipient address.");
-            }
+        const recipientPubKey = new PublicKey(recipientAddress);
     
-            // Validate Amount
-            if (!amount || isNaN(Number(amount)) || parseFloat(amount) <= 0) {
-                throw new Error("Invalid amount entered.");
-            }
+        const tx = new Transaction();
     
-            const tx = new Transaction();
+        tx.add(
+            SystemProgram.transfer({
+                fromPubkey: publicKey,
+                toPubkey: recipientPubKey,
+                lamports: +amount * 1e9,
+            })
+        );
     
-            tx.add(
-                SystemProgram.transfer({
-                    fromPubkey: publicKey,
-                    toPubkey: recipientPubKey,
-                    lamports: LAMPORTS_PER_SOL * parseFloat(amount),
-                })
-            );
+        tx.feePayer = publicKey;
     
-            tx.feePayer = publicKey;
-    
-            const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-            tx.recentBlockhash = blockhash;
-    
-            const signature = await sendTransaction(tx, connection);
-    
-            await connection.confirmTransaction({
-                blockhash,
-                lastValidBlockHeight,
-                signature,
-            });
-    
-            alert(`Transaction confirmed: ${signature}`);
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+        
+        tx.recentBlockhash = blockhash;
+
+        const signature = await sendTransaction(tx, connection);
+
+        await connection.confirmTransaction({
+            blockhash,
+            lastValidBlockHeight,
+            signature,
+        });
+
+        alert(`Transaction confirmed: ${signature}`);
         } catch (err) {
             alert(`Error: ${err}`);
         } finally {
@@ -100,33 +92,98 @@ export default function Checker() {
     };
 
     const getSPLToken = async () => {
-    if (!publicKey) return;
+        if (!publicKey) return;
     
-    try {
-        // Get information of all the tokens from the user's wallet
         const userTokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, {
             programId: TOKEN_PROGRAM_ID
         });
-        
-        console.log("User Token Accounts:", userTokenAccounts);
 
         const tokens = await Promise.all(userTokenAccounts.value.map((account) => {
             const token = account.account.data.parsed.info;
-            console.log("Token Data:", token);
             return {
                 mint: token.mint,
-                balance: token.tokenAmount.uiAmountString, // Fixed typo here
-            };
-        }));
-
-        console.log("Parsed Tokens:", tokens);
+                balance: token.tokenAmount.uiAmountString,
+            }
+        }))
 
         setTokens(tokens);
-    } catch (error) {
-        console.error("Error fetching SPL tokens:", error);
-    }
-};
+    };
 
+    const sendSPL = async (mint: string) => {
+        if (!publicKey) return;
+
+        try {
+        
+        setIsLoading(true);
+
+    
+        const recipientPubKey = new PublicKey(recipientAddress);
+    
+        const tx = new Transaction();
+        const mintPubKey = new PublicKey(mint);
+
+        const userTokenAccount = await getAssociatedTokenAddress(mintPubKey, publicKey);
+
+        const toTokenAccount = await getAssociatedTokenAddress(mintPubKey, recipientPubKey);
+
+        const checkATA = await connection.getAccountInfo(toTokenAccount);
+
+        if (!checkATA) {
+            tx.add(
+                createAssociatedTokenAccountInstruction(
+                    publicKey,
+                    toTokenAccount,
+                    recipientPubKey,
+                    mintPubKey,
+                )
+            )
+        }
+
+        const decimalNum = await getTokenDecimals(mintPubKey);
+
+        const amountBigInt = Math.pow(+amount, decimalNum)
+
+    
+        tx.add(
+            createTransferInstruction(
+                userTokenAccount,
+                toTokenAccount,
+                publicKey,
+                amountBigInt,
+            ),
+        );
+    
+        tx.feePayer = publicKey;
+    
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+        
+        tx.recentBlockhash = blockhash;
+
+        const signature = await sendTransaction(tx, connection);
+
+        await connection.confirmTransaction({
+            blockhash,
+            lastValidBlockHeight,
+            signature,
+        });
+
+        alert(`Transaction confirmed: ${signature}`);
+        } catch (err) {
+            alert(`Error: ${err}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const getTokenDecimals = async (mint: PublicKey) => {
+        const info = await connection.getParsedAccountInfo(mint);
+
+        if (!info.value) {
+            throw Error("Failed to fetch Decimal");
+        }
+
+        return (info.value.data as ParsedAccountData).parsed.info.decimal
+    }
     
 
     return (
@@ -178,6 +235,7 @@ export default function Checker() {
                                             isLoading ? "bg-red-300 cursor-not-allowed" : "bg-red-500 hover:bg-red-700"
                                         }`}
                                         disabled={isLoading}
+                                        onClick={() => setSelectedToken(null)}
                                     >
                                         Cancel
                                     </button>
@@ -190,6 +248,7 @@ export default function Checker() {
                             {tokens.map((token, index) => (
                                 <li key={index} className="text-gray-700">
                                     {token.mint}, Balance: {token.balance}
+
                                     {selectedToken === token.mint ? (
                                         <div className="mt-2">
                                             <input
@@ -204,8 +263,8 @@ export default function Checker() {
                                             value={amount}
                                             onChange={(e) => setAmount(e.target.value)}
                                             className="border rounded px-2 py-1 mr-2 border-gray-300" />
-                                            <button className="bg-green-500 hover:bg-green-700 font-bold py-1 px-2 rounded text-white">Confirm Send</button>
-                                            <button className="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded ml-2">Cancel</button>
+                                            <button onClick={() => sendSPL(token.mint)} className="bg-green-500 hover:bg-green-700 font-bold py-1 px-2 rounded text-white">Confirm Send</button>
+                                            <button onClick={() => setSelectedToken(null)} className="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded ml-2">Cancel</button>
                                         </div>
                                     ) : (
                                         <button className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded mt-2 item-end" onClick={() => setSelectedToken(token.mint)}>Send</button>
