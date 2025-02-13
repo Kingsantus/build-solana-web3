@@ -1,5 +1,5 @@
 "use client";
-import { WalletMultiButton, WalletDisconnectButton } from "@solana/wallet-adapter-react-ui";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import CreateWallet from "./components/createWallet";
 import bs58 from "bs58";
 import { useState } from "react";
@@ -23,19 +23,31 @@ export default function Home() {
   }
 
   return (
-    <main className="flex items-center flex-col gap-8 justify-center min-h-screen">
-      <div className="border hover::border-slate-900 rounded flex flex-col gap-8">
-        <WalletMultiButton style={{}} />
-      
-        <WalletDisconnectButton style={{}} />
+    <div className="w-screen h-screen flex items-center justify-center bg-gray-100">
+  <div className="w-1/2 max-w-md bg-white shadow-lg rounded-lg p-6">
+    {publicKey ? (
+      <>
+      <div className="flex flex-col gap-2">
+      <WalletMultiButton />   
+        {address && privateKey ? <>
+          <p className="mt-2 break-words">Your New Address: {address}</p>
+          <p className="mt-2 break-words">Your Private Key: {privateKey}</p>
+          <span>Do not share your private key</span>
+        </> : <>
+        <button onClick={wallet} className="bg-blue-500 text-white py-2 px-4 rounded mt-4">
+          Create Wallet
+        </button>
+        </>}
+        
       </div>
-      {publicKey ? <>
-        <button onClick={wallet} className="bg-blue-500 py-6">Create Wallet</button>
-        <p>{address}</p>
-        <br />
-        <p>{privateKey}</p>
-      </> : <p>Create Wallet!</p>}
-      
-    </main>
+        
+      </>
+    ) : (
+      <div className="flex justify-center">
+        <WalletMultiButton />
+      </div>
+    )}
+  </div>
+</div>
   )
 }
