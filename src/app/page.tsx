@@ -15,10 +15,10 @@ export default function Home() {
     const create = CreateWallet();
 
     const addressu = create.publicKey.toString();
-    console.log(addressu);
+    // console.log(addressu);
     setAddress(addressu);
     const privateKeyu = bs58.encode(create.secretKey)
-    console.log(privateKeyu);
+    // console.log(privateKeyu);
     setPrivateKey(privateKeyu);
   }
 
@@ -28,7 +28,7 @@ export default function Home() {
     {publicKey ? (
       <>
       <div className="flex flex-col gap-2">
-      <WalletMultiButton />   
+      <WalletMultiButton /> 
         {address && privateKey ? <>
           <p className="mt-2 break-words">Your New Address: {address}</p>
           <p className="mt-2 break-words">Your Private Key: {privateKey}</p>
